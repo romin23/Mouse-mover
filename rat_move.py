@@ -8,7 +8,8 @@ import customtkinter as ctki
 import threading
 
 is_moving = False
-square_anchor = None
+STOP_HOTKEY = "esc"
+click_overlay = None
 
 DEFAULT_MOVE_SPEED = 0.2
 DEFAULT_SLEEP_TIME = 1.0
@@ -25,8 +26,38 @@ def safe_float(value, default, lower, upper):
         return default
 
 
+def ensure_overlay():
+    global click_overlay
+    if click_overlay is not None:
+        return
+    overlay = tkinter.Toplevel(root)
+    overlay.overrideredirect(True)
+    overlay.attributes("-topmost", True)
+    try:
+        overlay.wm_attributes("-transparentcolor", "#010101")
+    except tkinter.TclError:
+        pass
+    overlay.configure(bg="#010101")
+    label = tkinter.Label(overlay, text="●", fg="#00ff88", bg="#010101", font=("Segoe UI", 16, "bold"))
+    label.pack()
+    overlay.withdraw()
+    click_overlay = overlay
+
+
+def show_click_overlay(x, y):
+    if click_overlay is None:
+        return
+    def _show():
+        size = 24
+        click_overlay.geometry(f"{size}x{size}+{int(x)}+{int(y)}")
+        click_overlay.deiconify()
+        click_overlay.lift()
+        root.after(180, click_overlay.withdraw)
+    root.after(0, _show)
+
+
 def mouse_movement_loop(move_speed, sleep_time):
-    global is_moving, square_anchor
+    global is_moving
     user32 = ctypes.windll.user32
     SCREEN_X, SCREEN_Y = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
     try:
@@ -37,12 +68,8 @@ def mouse_movement_loop(move_speed, sleep_time):
             if checkbox.get():
                 square_width = float(square_slider.get())
                 half = square_width / 2
-                if square_anchor is None:
-                    square_anchor = (
-                        clamp(SCREEN_X / 2, 0, SCREEN_X),
-                        clamp(SCREEN_Y / 2, 0, SCREEN_Y),
-                    )
-                cx, cy = square_anchor
+                cx, cy = pyautogui.position()
+                start_cx, start_cy = cx, cy  # keep the starting center to avoid drift to last corner
                 points = [
                     (clamp(cx - half, 0, SCREEN_X), clamp(cy - half, 0, SCREEN_Y)),
                     (clamp(cx + half, 0, SCREEN_X), clamp(cy - half, 0, SCREEN_Y)),
@@ -52,13 +79,13 @@ def mouse_movement_loop(move_speed, sleep_time):
                 for px, py in points:
                     pyautogui.moveTo(px, py, move_speed)
                     pyautogui.click(clicks=2, interval=0.25)
+                    show_click_overlay(px + 10, py + 10)
                     if keyboard.is_pressed("q") or not is_moving:
                         break
+                # Return to the starting center instantly so the next cycle does not drift toward the last corner
+                pyautogui.moveTo(start_cx, start_cy, duration=0)
                 time.sleep(sleep_time)
                 continue
-
-            # leaving square mode resets anchor so next enable starts from current cursor
-            square_anchor = None
 
             x = random.randint(0, SCREEN_X)
             y = random.randint(0, SCREEN_Y)
@@ -87,7 +114,13 @@ def rat_move():
         thread.start()
     
 
+def stop_move():
+    global is_moving
+    is_moving = False
+
+
 def crash_all():
+    keyboard.unhook_all_hotkeys()
     root.destroy()
 
 ctki.set_appearance_mode("dark")
@@ -98,6 +131,8 @@ root.title("Rat move ~@romin")
 root.iconbitmap("mouse.ico")
 root.geometry("420x480")
 root.minsize(380, 420)
+
+ensure_overlay()
 
 frame = ctki.CTkFrame(master=root)
 frame.pack(pady=18, padx=18, fill="both", expand=True)
@@ -137,10 +172,11 @@ start_btn.pack(pady=(12, 8), padx=10, fill="x")
 exit_btn = ctki.CTkButton(master=frame, text="Quit", height=32, hover_color="red", command=crash_all)
 exit_btn.pack(pady=(0, 12), padx=10, fill="x")
 
-quit_label = ctki.CTkLabel(master=frame, text='Press "q" to stop movement', text_color="red")
+quit_label = ctki.CTkLabel(master=frame, text='Press "q" or "Esc" to stop (Esc works in background)', text_color="red")
 quit_label.pack(pady=(0, 6), padx=10)
 
 root.resizable(True, True)
+keyboard.add_hotkey(STOP_HOTKEY, stop_move)
 root.mainloop()
 
 
