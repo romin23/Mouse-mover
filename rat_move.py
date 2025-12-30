@@ -8,16 +8,25 @@ import customtkinter as ctki
 import threading
 
 is_moving = False
+square_anchor = None
+
+DEFAULT_MOVE_SPEED = 0.2
+DEFAULT_SLEEP_TIME = 1.0
 
 
 def clamp(val, lower, upper):
     return max(lower, min(val, upper))
 
 
-def mouse_movement_loop():
-    global is_moving
-    MOVE_SPEED = float(move_speed_txt.get())
-    SLEEP_TIME = float(sleep_dur_txt.get())
+def safe_float(value, default, lower, upper):
+    try:
+        return clamp(float(value), lower, upper)
+    except (TypeError, ValueError):
+        return default
+
+
+def mouse_movement_loop(move_speed, sleep_time):
+    global is_moving, square_anchor
     user32 = ctypes.windll.user32
     SCREEN_X, SCREEN_Y = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
     try:
@@ -28,7 +37,13 @@ def mouse_movement_loop():
             if checkbox.get():
                 square_width = float(square_slider.get())
                 half = square_width / 2
-                cx, cy = pyautogui.position()
+                if square_anchor is None:
+                    ax, ay = pyautogui.position()
+                    square_anchor = (
+                        clamp(ax, 0, SCREEN_X),
+                        clamp(ay, 0, SCREEN_Y),
+                    )
+                cx, cy = square_anchor
                 points = [
                     (clamp(cx - half, 0, SCREEN_X), clamp(cy - half, 0, SCREEN_Y)),
                     (clamp(cx + half, 0, SCREEN_X), clamp(cy - half, 0, SCREEN_Y)),
@@ -36,17 +51,20 @@ def mouse_movement_loop():
                     (clamp(cx - half, 0, SCREEN_X), clamp(cy + half, 0, SCREEN_Y)),
                 ]
                 for px, py in points:
-                    pyautogui.moveTo(px, py, MOVE_SPEED)
+                    pyautogui.moveTo(px, py, move_speed)
                     pyautogui.click(clicks=2, interval=0.25)
                     if keyboard.is_pressed("q") or not is_moving:
                         break
-                time.sleep(SLEEP_TIME)
+                time.sleep(sleep_time)
                 continue
+
+            # leaving square mode resets anchor so next enable starts from current cursor
+            square_anchor = None
 
             x = random.randint(0, SCREEN_X)
             y = random.randint(0, SCREEN_Y)
-            pyautogui.moveTo(x, y, MOVE_SPEED)
-            time.sleep(SLEEP_TIME)
+            pyautogui.moveTo(x, y, move_speed)
+            time.sleep(sleep_time)
             if keyboard.is_pressed("q"):
                 break
     except KeyboardInterrupt:
@@ -58,7 +76,15 @@ def rat_move():
     global is_moving
     if not is_moving:
         is_moving = True
-        thread = threading.Thread(target=mouse_movement_loop, daemon=True)
+        move_speed = safe_float(move_speed_txt.get(), DEFAULT_MOVE_SPEED, 0.01, 10.0)
+        sleep_time = safe_float(sleep_dur_txt.get(), DEFAULT_SLEEP_TIME, 0.0, 60.0)
+        # reflect normalized values back to the entries so the user sees what is applied
+        move_speed_txt.delete(0, tkinter.END)
+        move_speed_txt.insert(0, str(move_speed))
+        sleep_dur_txt.delete(0, tkinter.END)
+        sleep_dur_txt.insert(0, str(sleep_time))
+
+        thread = threading.Thread(target=mouse_movement_loop, args=(move_speed, sleep_time), daemon=True)
         thread.start()
     
 
@@ -86,11 +112,13 @@ subtitle_label.pack(pady=(0, 10))
 move_label = ctki.CTkLabel(master=frame, text="Movement speed (seconds)")
 move_label.pack(pady=(6, 2), padx=10, anchor="w")
 move_speed_txt = ctki.CTkEntry(master=frame, width=320, height=30, placeholder_text="e.g. 0.2")
+move_speed_txt.insert(0, str(DEFAULT_MOVE_SPEED))
 move_speed_txt.pack(pady=(0, 10), padx=10, fill="x")
 
 sleep_label = ctki.CTkLabel(master=frame, text="Delay between moves (seconds)")
 sleep_label.pack(pady=(4, 2), padx=10, anchor="w")
 sleep_dur_txt = ctki.CTkEntry(master=frame, width=320, height=30, placeholder_text="e.g. 1.0")
+sleep_dur_txt.insert(0, str(DEFAULT_SLEEP_TIME))
 sleep_dur_txt.pack(pady=(0, 12), padx=10, fill="x")
 
 checkbox = ctki.CTkCheckBox(master=frame, text="Enable square double-click pattern")
