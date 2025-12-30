@@ -38,10 +38,9 @@ def mouse_movement_loop(move_speed, sleep_time):
                 square_width = float(square_slider.get())
                 half = square_width / 2
                 if square_anchor is None:
-                    ax, ay = pyautogui.position()
                     square_anchor = (
-                        clamp(ax, 0, SCREEN_X),
-                        clamp(ay, 0, SCREEN_Y),
+                        clamp(SCREEN_X / 2, 0, SCREEN_X),
+                        clamp(SCREEN_Y / 2, 0, SCREEN_Y),
                     )
                 cx, cy = square_anchor
                 points = [
